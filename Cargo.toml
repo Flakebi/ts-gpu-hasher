@@ -1,0 +1,31 @@
+[package]
+name = "gpu-id-level"
+version = "0.1.0"
+authors = ["Flakebi <flakebi@t-online.de>"]
+edition = "2018"
+
+[dependencies]
+grt-core = { version = "1.0.0", package = "geobacter-runtime-core" }
+grt-amd  = { version = "1.0.0", package = "geobacter-runtime-amd" }
+smallvec = "=1.4.1"
+
+[profile.release]
+debug = true
+debug-assertions = true
+
+[profile.dev]
+rpath = true
+[profile.test]
+rpath = true
+[profile.bench]
+rpath = true
+
+[patch.crates-io]
+amd-comgr-sys = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/amd-comgr-sys" }
+amd-comgr = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/amd-comgr" }
+hsa-rt-sys = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/hsa-rt-sys" }
+hsa-rt = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/hsa-rt" }
+geobacter-runtime-core = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-core" }
+geobacter-runtime-amd-macros = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-amd-macros" }
+geobacter-runtime-amd = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-amd" }
+alloc-wg = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/alloc-wg" }

@@ -37,6 +37,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "any_key"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -177,8 +186,11 @@ version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
 dependencies = [
+ "libc",
  "num-integer",
  "num-traits",
+ "time 0.1.43",
+ "winapi",
 ]
 
 [[package]]
@@ -198,7 +210,7 @@ version = "2.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37e58ac78573c40708d45522f0d80fa2f01cc4f9b4e2bf749807255454312002"
 dependencies = [
- "ansi_term",
+ "ansi_term 0.11.0",
  "atty",
  "bitflags",
  "strsim 0.8.0",
@@ -468,6 +480,7 @@ dependencies = [
  "lexical-core",
  "sha-1",
  "smallvec",
+ "tracing-subscriber",
  "tsproto-types",
 ]
 
@@ -622,6 +635,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if 1.0.0",
+]
+
+[[package]]
+name = "matchers"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f099785f7595cc4b4553a174ce30dd7589ef93391ff414dbb67f62392b9e0ce1"
+dependencies = [
+ "regex-automata",
 ]
 
 [[package]]
@@ -963,6 +985,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae1ded71d66a4a97f5e961fd0cb25a5f366a42a41570d16a763a69c092c26ae4"
 dependencies = [
  "byteorder",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -1118,6 +1141,15 @@ name = "sha1"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2579985fda508104f7587689507983eadd6a6e84dd35d6d115361f530916fa0d"
+
+[[package]]
+name = "sharded-slab"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79c719719ee05df97490f80a45acfc99e5a30ce98a1e4fb67aee422745ae14e3"
+dependencies = [
+ "lazy_static",
+]
 
 [[package]]
 name = "shlex"
@@ -1338,6 +1370,16 @@ dependencies = [
 
 [[package]]
 name = "time"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
+name = "time"
 version = "0.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1195b046942c221454c2539395f85413b33383a067449d78aab2b7b052a142f7"
@@ -1417,6 +1459,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-log"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e0f8c7178e13481ff6765bd169b33e8d554c5d2bbede5e32c356194be02b9b9"
+dependencies = [
+ "lazy_static",
+ "log",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-serde"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb65ea441fbb84f9f6748fd496cf7f63ec9af5bca94dd86456978d055e8eb28b"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1fa8f0c8f4c594e4fc9debc1990deab13238077271ba84dd853d54902ee3401"
+dependencies = [
+ "ansi_term 0.12.1",
+ "chrono",
+ "lazy_static",
+ "matchers",
+ "regex",
+ "serde",
+ "serde_json",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-serde",
+]
+
+[[package]]
 name = "tsproto-structs"
 version = "0.1.0"
 dependencies = [
@@ -1446,7 +1531,7 @@ dependencies = [
  "simple_asn1",
  "t4rust-derive",
  "thiserror",
- "time",
+ "time 0.2.25",
  "tsproto-structs",
  "untrusted",
 ]

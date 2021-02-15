@@ -12,6 +12,7 @@ grt-amd  = { version = "1.0.0", package = "geobacter-runtime-amd" }
 lexical-core = "0.7"
 sha-1 = { version = "0.9", features = ["force-soft"] }
 smallvec = "=1.4.1"
+tracing-subscriber = "0.2"
 tsproto-types = { path = "/home/sebi/Programmieren/Rust/ts3/tsclientlib/utils/tsproto-types" }
 
 [profile.release]

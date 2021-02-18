@@ -3,12 +3,14 @@
 extern crate grt_amd as geobacter_runtime_amd;
 
 use std::io::Write;
-use std::mem::size_of;
 use std::ops::*;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use clap::Clap;
+use generic_array::GenericArray;
 use grt_amd::alloc::*;
 use grt_amd::module::*;
 use grt_amd::prelude::*;
@@ -18,8 +20,15 @@ use lexical_core::ToLexical;
 use sha1::{Digest, Sha1};
 use tsproto_types::crypto::EccKeyPrivP256;
 
+const SHA1_BLOCK_SIZE: usize = 64;
+const SHA1_STATE_SIZE: usize = 5;
+/// SHA-1 initial state
+const SHA1_INIT_STATE: [u32; SHA1_STATE_SIZE] = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
+/// SHA-1 padding is 0x80, more zeros and message length as u64
+const SHA1_PADDING: usize = 9;
+
 const COUNT: usize = 1024 * 8;
-const PER_THREAD_COUNT: u64 = 200;
+const PER_THREAD_COUNT: u64 = 800;
 
 const WG_SIZE: usize = 256;
 
@@ -33,18 +42,59 @@ struct Options {
 	/// Start offset
 	#[clap(short, long, default_value = "0")]
 	offset: u64,
+	#[clap(short, long)]
+	cpu: bool,
 }
 
+#[derive(Clone, Debug, Default)]
 struct Entry {
 	offset: u64,
 	level: u8,
 }
 
-fn get_hash_cash_level(hash: &[u8]) -> u8 {
+fn format_num_separated<T: ToString>(n: T) -> String {
+	let mut res = String::new();
+	let s = n.to_string();
+	let mut pos = s.len();
+	let mut not_first = false;
+
+	for c in s.chars() {
+		if not_first && pos % 3 == 0 {
+			res.push(',');
+		}
+
+		res.push(c);
+		not_first = true;
+		pos -= 1;
+	};
+
+	res
+}
+
+fn get_hash_cash_level(hash: [u32; SHA1_STATE_SIZE]) -> u8 {
+	// Clamp to zero if level is < 32
+	if hash[0] != 0 {
+	// if hash[0] & 0xffff0000 != 0 {
+		return 0;
+	}
+	let mut res = 0;
+	for &d in &hash {
+		if d == 0 {
+			res += std::mem::size_of_val(&d) as u8 * 8;
+		} else {
+			// Get trailing zeros per byte
+			res += get_hash_cash_level_accurate(&d.to_be_bytes());
+			break;
+		}
+	}
+	res
+}
+
+fn get_hash_cash_level_accurate(hash: &[u8]) -> u8 {
 	let mut res = 0;
 	for &d in hash {
 		if d == 0 {
-			res += 8;
+			res += std::mem::size_of_val(&d) as u8 * 8;
 		} else {
 			res += d.trailing_zeros() as u8;
 			break;
@@ -53,20 +103,31 @@ fn get_hash_cash_level(hash: &[u8]) -> u8 {
 	res
 }
 
-fn find_best_level(omega: &[u8], start: u64, count: u64) -> Entry {
+fn get_hash_cash_level_from_str(omega: &[u8], offset: u64) -> u8 {
+	let mut hasher = Sha1::new();
+	hasher.update(omega);
+	hasher.update(offset.to_string().as_bytes());
+	let r = hasher.finalize();
+	get_hash_cash_level_accurate(&r)
+}
+
+fn find_best_level(state: [u32; SHA1_STATE_SIZE], omega: &[u8], msg_len: u64, start: u64, count: u64) -> Entry {
 	// sha1(<omega><offset>)
-	let hasher = {
-		let mut hasher = Sha1::new();
-		hasher.update(omega);
-		hasher
-	};
+	let mut block = GenericArray::default();
+	block[..omega.len()].copy_from_slice(omega);
 	let mut best = Entry { offset: start, level: 0 };
+	// TODO Only change the suffix of the number
 	for i in start..(start + count) {
-		let mut hasher = hasher.clone();
-		let mut format_buf = [0u8; 20];
-		let formatted = i.to_lexical(&mut format_buf);
-		hasher.update(formatted);
-		let level = get_hash_cash_level(&hasher.finalize());
+		let formatted = i.to_lexical(&mut block[omega.len()..]);
+		let len = omega.len() + formatted.len();
+		let total_len = (msg_len + formatted.len() as u64) * 8;
+		// Set last byte to 0x80 for SHA-1 padding, the rest is initialized with 0
+		block[len] = 0x80;
+		// Append total length in the end
+		block[SHA1_BLOCK_SIZE - 8..].copy_from_slice(&total_len.to_be_bytes());
+		let mut new_state = state;
+		sha1::compress(&mut new_state, &[block]);
+		let level = get_hash_cash_level(new_state);
 		if level > best.level {
 			best.offset = i;
 			best.level = level;
@@ -96,6 +157,8 @@ fn find_best_level(omega: &[u8], start: u64, count: u64) -> Entry {
 pub struct Args {
 	// copy: DeviceSignal,
 	omega: *const [u8],
+	state: *const [u32],
+	msg_len: u64,
 	offset: u64,
 	result_level: *mut [u8],
 	result_offset: *mut [u64],
@@ -129,12 +192,20 @@ impl Kernel for Args {
 			return;
 		};
 
+		let state = if let Some(state) = self.state_view() {
+			let mut s = [0; SHA1_STATE_SIZE];
+			s.copy_from_slice(state);
+			s
+		} else {
+			return;
+		};
+
 		// Global id
 		let idx = vp.gl_id();
 		// Number of workgroup
 		let wg_idx = vp.wg_id().x;
 		let start = self.offset + idx as u64 * PER_THREAD_COUNT;
-		let mut best = find_best_level(omega, start, PER_THREAD_COUNT);
+		let mut best = find_best_level(state, omega, self.msg_len, start, PER_THREAD_COUNT);
 
 		// TODO We can search more efficiently on a SIMD
 
@@ -149,8 +220,6 @@ impl Kernel for Args {
 					lds_offset.with_shared(|mut lds_offset| {
 						let lds_level_slice = lds_level.init(&vp, best.level);
 						let lds_offset_slice = lds_offset.init(&vp, best.offset);
-						// TODO Barrier here?
-						// std::geobacter::amdgpu::sync::workgroup_barrier();
 						if wi.x % (step_diff << 1) == 0 {
 							let step_diff_dim = Dim1D { x: step_diff };
 							if lds_level_slice[wi + step_diff] > best.level {
@@ -171,8 +240,11 @@ impl Kernel for Args {
 				if let (Some(dest_level), Some(dest_offset)) =
 					(level.get_mut(wg_idx as usize), offset.get_mut(wg_idx as usize))
 				{
-					*dest_level = best.level;
-					*dest_offset = best.offset;
+					// Load previous maximum
+					if best.level > *dest_level {
+						*dest_level = best.level;
+						*dest_offset = best.offset;
+					}
 				}
 			}
 		}
@@ -181,6 +253,7 @@ impl Kernel for Args {
 
 impl Args {
 	pub fn omega_view(&self) -> Option<&[u8]> { unsafe { self.omega.as_ref() } }
+	pub fn state_view(&self) -> Option<&[u32]> { unsafe { self.state.as_ref() } }
 	pub fn result_level_view(&self) -> Option<&mut [u8]> { unsafe { self.result_level.as_mut() } }
 	pub fn result_offset_view(&self) -> Option<&mut [u64]> {
 		unsafe { self.result_offset.as_mut() }
@@ -221,6 +294,82 @@ pub fn main() {
 		omega
 	};
 
+	// SHA-1 state and the prefix of the block that has to be hashed on the GPU
+	let (state, prefix) = {
+		let mut state = SHA1_INIT_STATE;
+		for block in omega.as_bytes().chunks(SHA1_BLOCK_SIZE) {
+			if block.len() == SHA1_BLOCK_SIZE {
+				let block = GenericArray::clone_from_slice(block);
+				sha1::compress(&mut state, &[block]);
+			}
+		}
+		(state, &omega[omega.len() / SHA1_BLOCK_SIZE * SHA1_BLOCK_SIZE..])
+	};
+
+	let mut offset = options.offset;
+	let max = if options.cpu {
+		cpu(&mut offset, state, prefix, &omega)
+	} else {
+		gpu(&mut offset, state, prefix, &omega)
+	};
+
+	println!("Maximum level {} at offset {}, next offset {}", max.level, format_num_separated(max.offset), format_num_separated(offset));
+
+	let level = get_hash_cash_level_from_str(omega.as_bytes(), max.offset);
+	assert_eq!(level, max.level, "Computed hash cash level is wrong");
+}
+
+fn run<F: FnMut(u64)>(offset: &mut u64, prefix: &str, mut f: F) {
+	let running = Arc::new(AtomicBool::new(true));
+	let r = running.clone();
+	ctrlc::set_handler(move || {
+		r.store(false, Ordering::Relaxed);
+	}).expect("Error setting Ctrl-C handler");
+
+	let start = Instant::now();
+	let mut last_print = start;
+	let mut last_print_offset = *offset;
+	let mut last_print_invocs = 0;
+	while running.load(Ordering::Relaxed) {
+		let end_offset = *offset + COUNT as u64 * PER_THREAD_COUNT;
+		if prefix.len() + end_offset.to_string().len() > SHA1_BLOCK_SIZE - SHA1_PADDING {
+			println!("Counter gets larger than sha-1 block size, aborting");
+			break;
+		}
+
+		f(*offset);
+
+		*offset = end_offset;
+		last_print_invocs += 1;
+
+		// Print stats
+		let now = Instant::now();
+		let dur = now.duration_since(last_print);
+		if dur > Duration::from_secs(2) {
+			let hashes = ((*offset - last_print_offset) as f32 / dur.as_secs_f32()) as u32;
+			/*print!(
+				"\rMaximum level {} at offset {} | {} H/s ({} invocations)",
+				max.0, max.1, hashes, last_print_invocs
+			);*/
+			const PREFIXES: [&str; 5] = ["", "k", "M", "G", "T"];
+			let (prefix, hashes_f) = {
+				let p = std::cmp::min(PREFIXES.len() - 1, (hashes as f32).log10() as usize / 3);
+				(PREFIXES[p], hashes as f32 / (10u32.pow(p as u32 * 3) as f32))
+			};
+			print!(
+				"\r{:.2} {}H/s ({} invocations) | At offset {}",
+				hashes_f, prefix, last_print_invocs, format_num_separated(*offset)
+			);
+			std::io::stdout().flush().expect("Failed to flush stdout");
+			last_print = now;
+			last_print_offset = *offset;
+			last_print_invocs = 0;
+		}
+	}
+	println!();
+}
+
+fn gpu(offset: &mut u64, state: [u32; SHA1_STATE_SIZE], prefix: &str, omega: &str) -> Entry {
 	let ctxt = time("create context", || Context::new().expect("create context"));
 
 	let accels = HsaAmdGpuAccel::all_devices(&ctxt).expect("HsaAmdGpuAccel::all_devices");
@@ -230,13 +379,21 @@ pub fn main() {
 	let accel = accels.first().unwrap();
 	println!("Picking first device out of {}: {}", accels.len(), accel.agent().name().unwrap());
 
-	println!("allocating {} MB of host memory", COUNT * size_of::<f32>() / 1024 / 1024);
+	let mut invoc: FuncModule<Args> = FuncModule::new(&accel);
+	invoc.compile_async();
+	unsafe {
+		invoc.no_acquire_fence();
+		invoc.device_release_fence();
+	}
 
-	// Lap = locally accessible poos
+	// Lap = locally accessible pool
 	let lap_alloc = accel.fine_lap_node_alloc(0);
 	let mut omega_buf: LapVec<u8> =
-		time("alloc omega_buf", || LapVec::with_capacity_in(omega.len(), lap_alloc.clone()));
-	time("Fill omega_buf", || omega_buf.extend_from_slice(omega.as_bytes()));
+		time("alloc omega_buf", || LapVec::with_capacity_in(prefix.len(), lap_alloc.clone()));
+	time("Fill omega_buf", || omega_buf.extend_from_slice(prefix.as_bytes()));
+	let mut state_buf: LapVec<u32> =
+		time("alloc state_buf", || LapVec::with_capacity_in(state.len(), lap_alloc.clone()));
+	time("Fill state_buf", || state_buf.extend_from_slice(&state));
 	let mut result_level_buf: LapVec<u8> = time("alloc result_level_buf", || {
 		LapVec::with_capacity_in(COUNT / WG_SIZE, lap_alloc.clone())
 	});
@@ -250,24 +407,22 @@ pub fn main() {
 		result_offset_buf.resize_with(COUNT / WG_SIZE, Default::default)
 	});
 
-	let mut invoc: FuncModule<Args> = FuncModule::new(&accel);
-	invoc.compile_async();
-	unsafe {
-		invoc.no_acquire_fence();
-		invoc.device_release_fence();
-	}
-
 	let mut device_omega_ptr = time("alloc device slice", || unsafe {
 		accel
 			.alloc_device_local_slice::<u8>(omega_buf.len())
 			.expect("HsaAmdGpuAccel::alloc_device_local")
 	});
-	let device_result_level_ptr = time("alloc device slice", || unsafe {
+	let mut device_state_ptr = time("alloc device slice", || unsafe {
+		accel
+			.alloc_device_local_slice::<u32>(state_buf.len())
+			.expect("HsaAmdGpuAccel::alloc_device_local")
+	});
+	let mut device_result_level_ptr = time("alloc device slice", || unsafe {
 		accel
 			.alloc_device_local_slice::<u8>(result_level_buf.len())
 			.expect("HsaAmdGpuAccel::alloc_device_local")
 	});
-	let device_result_offset_ptr = time("alloc device slice", || unsafe {
+	let mut device_result_offset_ptr = time("alloc device slice", || unsafe {
 		accel
 			.alloc_device_local_slice::<u64>(result_offset_buf.len())
 			.expect("HsaAmdGpuAccel::alloc_device_local")
@@ -275,7 +430,9 @@ pub fn main() {
 
 	println!("host ptr: 0x{:p}, agent ptr: 0x{:p}", omega_buf.as_ptr(), device_omega_ptr);
 
-	let async_copy_signal =
+	let async_copy_signal0 =
+		accel.new_host_signal(1).expect("HsaAmdGpuAccel::new_device_signal: async_copy_signal");
+	let async_copy_signal1 =
 		accel.new_host_signal(1).expect("HsaAmdGpuAccel::new_device_signal: async_copy_signal");
 	let mut results_signal0 =
 		accel.new_host_signal(1).expect("HsaAmdGpuAccel::new_host_signal: results_signal");
@@ -284,18 +441,31 @@ pub fn main() {
 
 	time("grant gpu access to buffers", || {
 		omega_buf.add_access(&*accel).expect("grant_agents_access");
+		state_buf.add_access(&*accel).expect("grant_agents_access");
 		result_level_buf.add_access(&*accel).expect("grant_agents_access");
 		result_offset_buf.add_access(&*accel).expect("grant_agents_access");
 	});
 
 	unsafe {
 		accel
-			.unchecked_async_copy_into(&omega_buf, &mut device_omega_ptr, &(), &async_copy_signal)
+			.unchecked_async_copy_into(&omega_buf, &mut device_omega_ptr, &(), &async_copy_signal0)
+			.expect("HsaAmdGpuAccel::async_copy_into");
+		accel
+			.unchecked_async_copy_into(&state_buf, &mut device_state_ptr, &(), &async_copy_signal1)
+			.expect("HsaAmdGpuAccel::async_copy_into");
+		accel
+			.unchecked_async_copy_into(&result_level_buf, &mut device_result_level_ptr, &(), &results_signal0)
+			.expect("HsaAmdGpuAccel::async_copy_into");
+		accel
+			.unchecked_async_copy_into(&result_offset_buf, &mut device_result_offset_ptr, &(), &results_signal1)
 			.expect("HsaAmdGpuAccel::async_copy_into");
 	}
 
 	time("cpu -> gpu async copy", || {
-		async_copy_signal.wait_for_zero(false).expect("unexpected signal status");
+		async_copy_signal0.wait_for_zero(false).expect("unexpected signal status");
+		async_copy_signal1.wait_for_zero(false).expect("unexpected signal status");
+		results_signal0.wait_for_zero(false).expect("unexpected signal status");
+		results_signal1.wait_for_zero(false).expect("unexpected signal status");
 	});
 
 	let group_size = invoc.group_size().expect("codegen failure");
@@ -313,28 +483,21 @@ pub fn main() {
 
 	time("compiling", || invoc.compile().expect("codegen failed"));
 
-	let mut offset = options.offset;
-	let start = Instant::now();
-	let mut max = (0, 0);
-
-	let mut last_print = start;
-	let mut last_print_offset = offset;
-	let mut last_print_invocs = 0;
-	loop {
+	run(offset, prefix, |offset| {
 		let mut invoc = invoc.invoc(&args_pool);
 
 		let kernel_signal =
 			GlobalSignal::new(1).expect("HsaAmdGpuAccel::new_host_signal: kernel_signal");
 		let args = Args {
 			offset,
-			// TODO Omega has a known size, we can just put it into Args as a slice
+			msg_len: omega.len() as u64,
 			omega: device_omega_ptr.as_ptr(),
+			state: device_state_ptr.as_ptr(),
 			result_level: device_result_level_ptr.as_ptr(),
 			result_offset: device_result_offset_ptr.as_ptr(),
 			completion: kernel_signal,
 			queue: queue.clone(),
 		};
-		//println!("Testing offsets {}..{}", offset, offset + grid.x.end as u64 * PER_THREAD_COUNT);
 
 		let wait = /*time("dispatching", ||*/ unsafe {
 			invoc.unchecked_call_async(&grid, args).expect("Invoc::call_async")
@@ -348,64 +511,50 @@ pub fn main() {
 
 		drop(wait);
 		args_pool.wash();
+	});
 
-		// now copy the results back to the locked memory:
-		results_signal0.reset(accel, 1).expect("Failed to reset signal");
-		results_signal1.reset(accel, 1).expect("Failed to reset signal");
-		unsafe {
-			accel
-				.unchecked_async_copy_from(
-					&device_result_level_ptr,
-					&mut result_level_buf,
-					&(),
-					&results_signal0,
-				)
-				.expect("HsaAmdGpuAccel::async_copy_from");
-			accel
-				.unchecked_async_copy_from(
-					&device_result_offset_ptr,
-					&mut result_offset_buf,
-					&(),
-					&results_signal1,
-				)
-				.expect("HsaAmdGpuAccel::async_copy_from");
-		}
-		//time("gpu -> cpu async copy", || {
+	// now copy the results back to the locked memory:
+	results_signal0.reset(accel, 1).expect("Failed to reset signal");
+	results_signal1.reset(accel, 1).expect("Failed to reset signal");
+	unsafe {
+		accel
+			.unchecked_async_copy_from(
+				&device_result_level_ptr,
+				&mut result_level_buf,
+				&(),
+				&results_signal0,
+			)
+			.expect("HsaAmdGpuAccel::async_copy_from");
+		accel
+			.unchecked_async_copy_from(
+				&device_result_offset_ptr,
+				&mut result_offset_buf,
+				&(),
+				&results_signal1,
+			)
+			.expect("HsaAmdGpuAccel::async_copy_from");
+	}
+	time("gpu -> cpu async copy", || {
 		results_signal0.wait_for_zero(false).expect("unexpected signal status");
 		results_signal1.wait_for_zero(false).expect("unexpected signal status");
-		//});
+	});
 
-		let cur_max = //time("find maximum", || {
-			result_level_buf.iter().copied().zip(result_offset_buf.iter().copied())
-				.max_by_key(|(l, _)| *l).expect("Empty result buffer");
-		//});
-		if cur_max.0 > max.0 {
-			max = cur_max;
-		}
-		offset += grid.x.end as u64 * PER_THREAD_COUNT;
-		last_print_invocs += 1;
-
-		// Print stats
-		let now = Instant::now();
-		let dur = now.duration_since(last_print);
-		if dur > Duration::from_secs(2) {
-			let hashes = ((offset - last_print_offset) as f32 / dur.as_secs_f32()) as u32;
-			print!(
-				"\rMaximum level {} at offset {} | {} H/s ({} invocations)",
-				max.0, max.1, hashes, last_print_invocs
-			);
-			std::io::stdout().flush().expect("Failed to flush stdout");
-			last_print = now;
-			last_print_offset = offset;
-			last_print_invocs = 0;
-		}
-
-		if now.duration_since(start) > Duration::from_secs(15) {
-			println!(
-				"\nMaximum level {} at offset {}, next offset {}                    ",
-				max.0, max.1, offset
-			);
-			break;
-		}
+	let max = result_level_buf.iter().copied().zip(result_offset_buf.iter().copied())
+		.max_by_key(|(l, _)| *l).expect("Empty result buffer");
+	Entry {
+		level: max.0,
+		offset: max.1,
 	}
+}
+
+fn cpu(offset: &mut u64, state: [u32; SHA1_STATE_SIZE], prefix: &str, omega: &str) -> Entry {
+	let mut max = Entry::default();
+
+	run(offset, prefix, |offset| {
+		let r = find_best_level(state, prefix.as_bytes(), omega.len() as u64, offset, COUNT as u64 * PER_THREAD_COUNT);
+		if r.level > max.level {
+			max = r;
+		}
+	});
+	max
 }

@@ -27,9 +27,9 @@ const SHA1_INIT_STATE: [u32; SHA1_STATE_SIZE] = [0x67452301, 0xEFCDAB89, 0x98BAD
 /// SHA-1 padding is 0x80, more zeros and message length as u64
 const SHA1_PADDING: usize = 9;
 
-const COUNT: usize = 1024 * 8;
+// Optimization parameter, tuned for gfx803
+const COUNT: usize = 1024 * 16;
 const PER_THREAD_COUNT: u64 = 800;
-
 const WG_SIZE: usize = 256;
 
 #[derive(Clone, Debug, clap::Clap)]
@@ -73,8 +73,8 @@ fn format_num_separated<T: ToString>(n: T) -> String {
 
 fn get_hash_cash_level(hash: [u32; SHA1_STATE_SIZE]) -> u8 {
 	// Clamp to zero if level is < 32
-	if hash[0] != 0 {
-	// if hash[0] & 0xffff0000 != 0 {
+	// if hash[0] != 0 {
+	if hash[0] & 0xffff0000 != 0 {
 		return 0;
 	}
 	let mut res = 0;

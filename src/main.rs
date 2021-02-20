@@ -29,7 +29,7 @@ const SHA1_PADDING: usize = 9;
 
 // Optimization parameter, tuned for gfx803
 const COUNT: usize = 1024 * 16;
-const PER_THREAD_COUNT: u64 = 800;
+const PER_THREAD_COUNT: u64 = 1000;
 const WG_SIZE: usize = 256;
 
 #[derive(Clone, Debug, clap::Clap)]
@@ -111,26 +111,49 @@ fn get_hash_cash_level_from_str(omega: &[u8], offset: u64) -> u8 {
 	get_hash_cash_level_accurate(&r)
 }
 
-fn find_best_level(state: [u32; SHA1_STATE_SIZE], omega: &[u8], msg_len: u64, start: u64, count: u64) -> Entry {
+fn find_best_level(state: [u32; SHA1_STATE_SIZE], omega: &[u8], msg_len: u64, start: u64) -> Entry {
 	// sha1(<omega><offset>)
 	let mut block = GenericArray::default();
 	block[..omega.len()].copy_from_slice(omega);
+	let formatted = start.to_lexical(&mut block[omega.len()..]);
+	let len = omega.len() + formatted.len();
+	let total_len = (msg_len + formatted.len() as u64) * 8;
+	// Set last byte to 0x80 for SHA-1 padding, the rest is initialized with 0
+	block[len] = 0x80;
+	// Append total length in the end
+	block[SHA1_BLOCK_SIZE - 8..].copy_from_slice(&total_len.to_be_bytes());
+
 	let mut best = Entry { offset: start, level: 0 };
-	// TODO Only change the suffix of the number
-	for i in start..(start + count) {
-		let formatted = i.to_lexical(&mut block[omega.len()..]);
-		let len = omega.len() + formatted.len();
-		let total_len = (msg_len + formatted.len() as u64) * 8;
-		// Set last byte to 0x80 for SHA-1 padding, the rest is initialized with 0
-		block[len] = 0x80;
-		// Append total length in the end
-		block[SHA1_BLOCK_SIZE - 8..].copy_from_slice(&total_len.to_be_bytes());
+	for i in start..(start + PER_THREAD_COUNT) {
+		// Only change the suffix of the number
+		/*if i <= 1000 {
+			// Does not work for first block (starting with 0)
+			let formatted = i.to_lexical(&mut block[omega.len()..]);
+			len = omega.len() + formatted.len();
+			total_len = (msg_len + formatted.len() as u64) * 8;
+
+			// Padding
+			block[len] = 0x80;
+			block[SHA1_BLOCK_SIZE - 8..].copy_from_slice(&total_len.to_be_bytes());
+		}*/
+
 		let mut new_state = state;
 		sha1::compress(&mut new_state, &[block]);
 		let level = get_hash_cash_level(new_state);
 		if level > best.level {
 			best.offset = i;
 			best.level = level;
+		}
+
+		// Increment
+		block[len - 1] += 1;
+		if block[len - 1] == b'9' + 1 {
+			block[len - 1] = b'0';
+			block[len - 2] += 1;
+			if block[len - 2] == b'9' + 1 {
+				block[len - 2] = b'0';
+				block[len - 3] += 1;
+			}
 		}
 	}
 	best
@@ -205,7 +228,7 @@ impl Kernel for Args {
 		// Number of workgroup
 		let wg_idx = vp.wg_id().x;
 		let start = self.offset + idx as u64 * PER_THREAD_COUNT;
-		let mut best = find_best_level(state, omega, self.msg_len, start, PER_THREAD_COUNT);
+		let mut best = find_best_level(state, omega, self.msg_len, start);
 
 		// TODO We can search more efficiently on a SIMD
 
@@ -306,7 +329,9 @@ pub fn main() {
 		(state, &omega[omega.len() / SHA1_BLOCK_SIZE * SHA1_BLOCK_SIZE..])
 	};
 
-	let mut offset = options.offset;
+	// Make a multiple of PER_THREAD_COUNT
+	let mut offset = options.offset / PER_THREAD_COUNT * PER_THREAD_COUNT + PER_THREAD_COUNT;
+	// TODO Starts at PER_THREAD_COUNT, so we don't need to special case the beginning
 	let max = if options.cpu {
 		cpu(&mut offset, state, prefix, &omega)
 	} else {
@@ -551,7 +576,7 @@ fn cpu(offset: &mut u64, state: [u32; SHA1_STATE_SIZE], prefix: &str, omega: &st
 	let mut max = Entry::default();
 
 	run(offset, prefix, |offset| {
-		let r = find_best_level(state, prefix.as_bytes(), omega.len() as u64, offset, COUNT as u64 * PER_THREAD_COUNT);
+		let r = find_best_level(state, prefix.as_bytes(), omega.len() as u64, offset);
 		if r.level > max.level {
 			max = r;
 		}

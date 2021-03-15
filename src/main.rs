@@ -309,7 +309,7 @@ pub fn main() {
 	let omega = if let Some(key) = options.key {
 		key
 	} else {
-		let key = EccKeyPrivP256::create().expect("Failed to create key");
+		let key = EccKeyPrivP256::create();
 		let priv_key = key.to_ts().expect("Cannot convert private key");
 		let omega = key.to_pub().to_ts().expect("Cannot convert public key");
 		println!("Generated private key {}", priv_key);
@@ -330,8 +330,11 @@ pub fn main() {
 	};
 
 	// Make a multiple of PER_THREAD_COUNT
-	let mut offset = options.offset / PER_THREAD_COUNT * PER_THREAD_COUNT + PER_THREAD_COUNT;
+	let mut offset = options.offset / PER_THREAD_COUNT * PER_THREAD_COUNT;
 	// TODO Starts at PER_THREAD_COUNT, so we don't need to special case the beginning
+	if offset < PER_THREAD_COUNT {
+		offset = PER_THREAD_COUNT
+	}
 	let max = if options.cpu {
 		cpu(&mut offset, state, prefix, &omega)
 	} else {

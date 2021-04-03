@@ -16,7 +16,7 @@ lexical-core = "0.7"
 sha-1 = { version = "0.9.4", features = ["compress", "force-soft"] }
 smallvec = "=1.4.1"
 tracing-subscriber = "0.2"
-tsproto-types = { path = "/home/sebi/Programmieren/Rust/ts3/tsclientlib/utils/tsproto-types" }
+tsproto-types = { git = "https://github.com/ReSpeak/tsclientlib", rev = "33678d401eef95f432bc23d02f0ca4d9575caed6" }
 
 [profile.release]
 debug = true
@@ -30,11 +30,11 @@ rpath = true
 rpath = true
 
 [patch.crates-io]
-amd-comgr-sys = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/amd-comgr-sys" }
-amd-comgr = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/amd-comgr" }
-hsa-rt-sys = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/hsa-rt-sys" }
-hsa-rt = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/hsa-rt" }
-geobacter-runtime-core = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-core" }
-geobacter-runtime-amd-macros = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-amd-macros" }
-geobacter-runtime-amd = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/geobacter/runtime-amd" }
-alloc-wg = { path = "/home/sebi/Dokumente/Dateien/Programme/Tools/geobacter/alloc-wg" }
+amd-comgr-sys = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+amd-comgr = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+hsa-rt-sys = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+hsa-rt = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+geobacter-runtime-core = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+geobacter-runtime-amd-macros = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+geobacter-runtime-amd = { git = "https://github.com/geobacter-rs/geobacter", rev = "ee15a1403f7536f3e306b86c80354d1332717db6" }
+alloc-wg = { git = "https://github.com/geobacter-rs/alloc-wg", rev = "501dd301ef4834993c9a807a1b72147fa0e41784" }

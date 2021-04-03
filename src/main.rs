@@ -72,7 +72,7 @@ fn format_num_separated<T: ToString>(n: T) -> String {
 }
 
 fn get_hash_cash_level(hash: [u32; SHA1_STATE_SIZE]) -> u8 {
-	// Clamp to zero if level is < 32
+	// Clamp to zero if level is < 16
 	// if hash[0] != 0 {
 	if hash[0] & 0xffff0000 != 0 {
 		return 0;
@@ -498,6 +498,7 @@ fn gpu(offset: &mut u64, state: [u32; SHA1_STATE_SIZE], prefix: &str, omega: &st
 
 	let group_size = invoc.group_size().expect("codegen failure");
 	let private_size = invoc.private_size().unwrap();
+	println!("Creating queue group_size: {}, private_size: {}", group_size, private_size);
 	let queue = Rc::new(
 		accel
 			.create_single_queue2(None, group_size, private_size)
@@ -579,9 +580,11 @@ fn cpu(offset: &mut u64, state: [u32; SHA1_STATE_SIZE], prefix: &str, omega: &st
 	let mut max = Entry::default();
 
 	run(offset, prefix, |offset| {
-		let r = find_best_level(state, prefix.as_bytes(), omega.len() as u64, offset);
-		if r.level > max.level {
-			max = r;
+		for _ in 0..COUNT {
+			let r = find_best_level(state, prefix.as_bytes(), omega.len() as u64, offset);
+			if r.level > max.level {
+				max = r;
+			}
 		}
 	});
 	max

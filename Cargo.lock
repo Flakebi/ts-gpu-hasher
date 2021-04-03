@@ -14,10 +14,12 @@ dependencies = [
 [[package]]
 name = "alloc-wg"
 version = "0.9.0"
+source = "git+https://github.com/geobacter-rs/alloc-wg?rev=501dd301ef4834993c9a807a1b72147fa0e41784#501dd301ef4834993c9a807a1b72147fa0e41784"
 
 [[package]]
 name = "amd-comgr"
 version = "1.0.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "amd-comgr-sys",
 ]
@@ -25,6 +27,7 @@ dependencies = [
 [[package]]
 name = "amd-comgr-sys"
 version = "1.0.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "bindgen",
 ]
@@ -462,6 +465,7 @@ dependencies = [
 [[package]]
 name = "geobacter-runtime-amd"
 version = "1.0.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "alloc-wg",
  "amd-comgr",
@@ -482,6 +486,7 @@ dependencies = [
 [[package]]
 name = "geobacter-runtime-amd-macros"
 version = "1.0.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -491,6 +496,7 @@ dependencies = [
 [[package]]
 name = "geobacter-runtime-core"
 version = "1.0.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "any_key",
  "crossbeam-utils",
@@ -620,6 +626,7 @@ dependencies = [
 [[package]]
 name = "hsa-rt"
 version = "0.1.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "alloc-wg",
  "hsa-rt-sys",
@@ -631,6 +638,7 @@ dependencies = [
 [[package]]
 name = "hsa-rt-sys"
 version = "0.1.0"
+source = "git+https://github.com/geobacter-rs/geobacter?rev=ee15a1403f7536f3e306b86c80354d1332717db6#ee15a1403f7536f3e306b86c80354d1332717db6"
 dependencies = [
  "bindgen",
 ]
@@ -705,9 +713,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.86"
+version = "0.2.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7282d924be3275cec7f6756ff4121987bc6481325397dde6ba3e7802b1a8b1c"
+checksum = "56d855069fafbb9b344c0f962150cd2c1187975cb1c22c1522c240d8c4986714"
 
 [[package]]
 name = "libloading"
@@ -1659,6 +1667,7 @@ dependencies = [
 [[package]]
 name = "tsproto-structs"
 version = "0.1.0"
+source = "git+https://github.com/ReSpeak/tsclientlib?rev=33678d401eef95f432bc23d02f0ca4d9575caed6#33678d401eef95f432bc23d02f0ca4d9575caed6"
 dependencies = [
  "base64",
  "csv",
@@ -1671,6 +1680,7 @@ dependencies = [
 [[package]]
 name = "tsproto-types"
 version = "0.1.0"
+source = "git+https://github.com/ReSpeak/tsclientlib?rev=33678d401eef95f432bc23d02f0ca4d9575caed6#33678d401eef95f432bc23d02f0ca4d9575caed6"
 dependencies = [
  "base64",
  "bitflags",
